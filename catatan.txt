@@ -1,0 +1,430 @@
+<script lang="ts">
+  import { supabase } from "$lib/supabaseClient";
+  import { onMount } from "svelte";
+
+  let users: any[] = [];
+  let absenData: any[] = [];
+  let sholat = "Subuh";
+  let tanggal = new Date().toISOString().split("T")[0];
+  let today = new Date().toISOString().split("T")[0];
+
+  let activeSection: "dashboard" | "form" = "dashboard";
+  let editingId: number | null = null;
+  let editStatus: string = "";
+  let menuOpen = false; // burger menu
+
+  onMount(async () => {
+    const { data } = await supabase.from("users").select("*").order("id");
+    users = data ?? [];
+    await loadAbsen();
+  });
+
+  async function loadAbsen() {
+    const { data } = await supabase
+      .from("absen")
+      .select("id, user_id, status, tanggal, sholat, users(name)")
+      .eq("tanggal", tanggal)
+      .eq("sholat", sholat);
+
+    absenData = data ?? [];
+    editingId = null;
+  }
+
+  async function submitAbsen(e: Event) {
+    e.preventDefault();
+    if (tanggal < today) {
+      alert("❌ Tidak bisa mengisi absen untuk tanggal yang sudah lewat");
+      return;
+    }
+
+    const formData = new FormData(e.target as HTMLFormElement);
+
+    for (let user of users) {
+      const status = formData.get(`${user.id}-status`) ? "hadir" : "tidak";
+
+      const { data: existing } = await supabase
+        .from("absen")
+        .select("id")
+        .eq("user_id", user.id)
+        .eq("tanggal", tanggal)
+        .eq("sholat", sholat)
+        .maybeSingle();
+
+      if (existing) {
+        await supabase.from("absen").update({ status }).eq("id", existing.id);
+      } else {
+        await supabase.from("absen").insert({
+          user_id: user.id,
+          tanggal,
+          sholat,
+          status
+        });
+      }
+    }
+
+    alert(`✅ Absen ${sholat} tanggal ${tanggal} berhasil disimpan`);
+    await loadAbsen();
+    activeSection = "dashboard";
+  }
+
+  function startEdit(row: any) {
+    if (tanggal < today) {
+      alert("❌ Tidak bisa edit absen tanggal yang sudah lewat");
+      return;
+    }
+    editingId = row.id;
+    editStatus = row.status;
+  }
+
+  async function saveEdit(id: number) {
+    await supabase.from("absen").update({ status: editStatus }).eq("id", id);
+    editingId = null;
+    await loadAbsen();
+  }
+
+  async function removeAbsen(id: number) {
+    if (tanggal < today) {
+      alert("❌ Tidak bisa hapus absen tanggal yang sudah lewat");
+      return;
+    }
+    if (!confirm("Apakah yakin ingin menghapus data ini?")) return;
+    await supabase.from("absen").delete().eq("id", id);
+    await loadAbsen();
+  }
+
+ // 📥 Export ke CSV (dikelompokkan per sholat)
+async function exportCSV() {
+  const { data } = await supabase
+    .from("absen")
+    .select("id, user_id, status, tanggal, sholat, users(name)")
+    .eq("tanggal", tanggal)
+    .order("sholat, user_id");
+
+  if (!data || data.length === 0) {
+    alert("⚠️ Tidak ada data untuk diexport");
+    return;
+  }
+
+  let csv = "";
+  let currentSholat = "";
+
+  data.forEach((row) => {
+    if (row.sholat !== currentSholat) {
+      // Tambahkan header baru saat ganti sholat
+      currentSholat = row.sholat;
+      csv += `\nSholat: ${currentSholat}\n`;
+      csv += "Nama,Tanggal,Status\n";
+    }
+    csv += `${row.users.name},${row.tanggal},${row.status}\n`;
+  });
+
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `Absensi_${tanggal}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+</script>
+
+<div class="layout">
+  <!-- Sidebar / Navbar -->
+  <aside class="sidebar {menuOpen ? 'open' : ''}">
+    <div class="nav-header">
+      <h2>📿 Absensi Sholat</h2>
+      <button class="burger" on:click={() => (menuOpen = !menuOpen)}>
+        ☰
+      </button>
+    </div>
+    <nav class="{menuOpen ? 'show' : ''}">
+      <a
+        class="{activeSection === 'dashboard' ? 'active' : ''}"
+        on:click={() => {
+          activeSection = "dashboard";
+          menuOpen = false;
+        }}
+      >
+        Dashboard
+      </a>
+      <a
+        class="{activeSection === 'form' ? 'active' : ''}"
+        on:click={() => {
+          activeSection = "form";
+          menuOpen = false;
+        }}
+      >
+        Form Absen
+      </a>
+    </nav>
+  </aside>
+
+  <!-- Main Content -->
+  <main class="content">
+    {#if activeSection === "dashboard"}
+      <h1>Dashboard Absen</h1>
+      <div class="filters">
+        <select bind:value={sholat} on:change={loadAbsen}>
+          <option value="Subuh">Subuh</option>
+          <option value="Dzuhur">Dzuhur</option>
+          <option value="Ashar">Ashar</option>
+          <option value="Maghrib">Maghrib</option>
+          <option value="Isya">Isya</option>
+        </select>
+        <input type="date" bind:value={tanggal} on:change={loadAbsen} />
+        {#if tanggal === today}
+          <button
+            on:click={() => (activeSection = "form")}
+            class="btn-add"
+          >
+            + Tambah Absen
+          </button>
+        {/if}
+        <button class="btn-export" on:click={exportCSV}>
+          ⬇️ Export Excel
+        </button>
+      </div>
+
+      <div class="table-wrapper">
+        <table>
+          <thead>
+            <tr>
+              <th>Nama</th>
+              <th>Sholat</th>
+              <th>Tanggal</th>
+              <th>Status</th>
+              <th>Aksi</th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each absenData as row}
+              <tr>
+                <td>{row.users.name}</td>
+                <td>{row.sholat}</td>
+                <td>{row.tanggal}</td>
+                <td>
+                  {#if editingId === row.id}
+                    <select bind:value={editStatus}>
+                      <option value="hadir">✅ Hadir</option>
+                      <option value="tidak">❌ Tidak</option>
+                    </select>
+                  {:else}
+                    {row.status === "hadir" ? "✅ Hadir" : "❌ Tidak"}
+                  {/if}
+                </td>
+                <td>
+                  {#if tanggal === today}
+                    {#if editingId === row.id}
+                      <button on:click={() => saveEdit(row.id)}>Simpan</button>
+                      <button on:click={() => (editingId = null)}>Batal</button>
+                    {:else}
+                      <button on:click={() => startEdit(row)}>Edit</button>
+                      <button on:click={() => removeAbsen(row.id)}>Hapus</button>
+                    {/if}
+                  {:else}
+                    <span style="color: gray;">🔒 Read Only</span>
+                  {/if}
+                </td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+    {/if}
+
+    {#if activeSection === "form"}
+      <div class="form-card">
+        <h1>Form Absen {sholat}</h1>
+        {#if tanggal === today}
+          <form on:submit={submitAbsen}>
+            {#each users as user}
+              <label class="check-row">
+                <input type="checkbox" name="{user.id}-status" />
+                {user.name}
+              </label>
+            {/each}
+            <button type="submit">Simpan Absen</button>
+          </form>
+        {:else}
+          <p>❌ Tidak bisa mengisi absen untuk tanggal yang sudah lewat</p>
+        {/if}
+      </div>
+    {/if}
+  </main>
+</div>
+
+<style>
+  body {
+    margin: 0;
+    font-family: sans-serif;
+    background: #f9fafb;
+  }
+
+  /* Layout */
+  .layout {
+    display: flex;
+    min-height: 100vh;
+  }
+
+  /* Sidebar */
+  .sidebar {
+    background: #2563eb;
+    color: white;
+    padding: 1rem;
+    width: 220px;
+    flex-shrink: 0;
+    transition: all 0.3s ease;
+  }
+  .nav-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .sidebar h2 {
+    margin: 0;
+    font-size: 1.2rem;
+  }
+  .sidebar nav {
+    display: flex;
+    flex-direction: column;
+    gap: 0.8rem;
+    margin-top: 1rem;
+  }
+  .sidebar nav a {
+    color: white;
+    text-decoration: none;
+    padding: 0.5rem;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+  .sidebar nav a.active,
+  .sidebar nav a:hover {
+    background: rgba(255, 255, 255, 0.2);
+  }
+  .burger {
+    display: none;
+    background: none;
+    border: none;
+    font-size: 1.6rem;
+    color: white;
+    cursor: pointer;
+  }
+
+  /* Main */
+  .content {
+    flex: 1;
+    padding: 1rem;
+  }
+
+  .filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 1rem;
+    margin-bottom: 1rem;
+  }
+  .btn-add {
+    background: #16a34a;
+    color: white;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 600;
+  }
+
+  .table-wrapper {
+    background: white;
+    border-radius: 8px;
+    overflow-x: auto;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  thead {
+    background: #2563eb;
+    color: white;
+  }
+  th,
+  td {
+    padding: 0.6rem;
+    text-align: center;
+    border: 1px solid #ddd;
+  }
+  tr:nth-child(even) {
+    background: #f3f4f6;
+  }
+
+  .form-card {
+    background: white;
+    border-radius: 8px;
+    padding: 1rem;
+    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+  }
+  .check-row {
+    display: block;
+    padding: 0.4rem 0;
+    border-bottom: 1px solid #eee;
+  }
+  .form-card button {
+    margin-top: 1rem;
+    background: #2563eb;
+    color: white;
+    border: none;
+    padding: 0.6rem 1rem;
+    border-radius: 6px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  /* Responsive */
+  @media (max-width: 768px) {
+    .layout {
+      flex-direction: column;
+    }
+    .sidebar {
+      width: 93%;
+      padding: 0.8rem 1rem;
+    }
+    .burger {
+      display: block;
+    }
+    .sidebar nav {
+      display: none;
+      flex-direction: column;
+      background: #1e3a8a;
+      padding: 0.5rem;
+      border-radius: 6px;
+      animation: slideDown 0.3s ease;
+    }
+    .sidebar nav.show {
+      display: flex;
+    }
+  }
+
+  @keyframes slideDown {
+    from {
+      opacity: 0;
+      transform: translateY(-10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+   .btn-export {
+    background: #f59e0b;
+    color: white;
+    border: none;
+    padding: 0.5rem 1rem;
+    border-radius: 6px;
+    cursor: pointer;
+    font-weight: 600;
+  }
+  .btn-export:hover {
+    background: #d97706;
+  }
+  
+</style>

@@ -21,7 +21,7 @@
 		"vite": "^7.0.4"
 	},
 	"dependencies": {
-		"@supabase/supabase-js": "^2.57.4",
+		"@supabase/supabase-js": "^2.119.2",
 		"xlsx": "^0.18.5"
 	}
 }
