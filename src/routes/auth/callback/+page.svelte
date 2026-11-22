@@ -1,6 +1,6 @@
 <script>
 	import { onMount } from 'svelte';
-	import { supabase } from '$lib/supabaseClients.js';
+	import { supabase } from '$lib/supabaseClient.js';
 	import { goto } from '$app/navigation';
 
 	let status = 'Memverifikasi email...';

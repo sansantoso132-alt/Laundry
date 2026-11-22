@@ -1,7 +1,7 @@
 <script>
     import { onMount } from 'svelte';
     import { goto } from '$app/navigation';
-    import { supabase } from '$lib/supabaseClients.js';
+    import { supabase } from '$lib/supabaseClient.js';
 
     let loading = true;
     let refreshing = false;

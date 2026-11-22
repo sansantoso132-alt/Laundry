@@ -1,5 +1,5 @@
 <script>
-	import { supabase } from '$lib/supabaseClients.js';
+	import { supabase } from '$lib/supabaseClient.js';
 	import { goto } from '$app/navigation';
 
 	let mode = 'login';
