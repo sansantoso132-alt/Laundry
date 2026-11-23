@@ -1,5 +1,4 @@
 <script>
-import { supabase } from '$lib/supabaseClient';
     import { onMount } from 'svelte';
     import { goto } from '$app/navigation';
     import { supabase } from '$lib/supabaseClient.js';
