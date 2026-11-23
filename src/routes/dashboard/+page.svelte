@@ -1,7 +1,7 @@
 <script>
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
-  import { supabase } from '$lib/supabaseClient';
+  import { supabase } from '$lib/supabaseClient.js';
 
   // ---------- util tanggal (dideklarasikan lebih dulu karena dipakai state awal) ----------
   function toISO(d) { return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 10); }
